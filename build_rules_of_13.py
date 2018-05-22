@@ -13,30 +13,36 @@ class RuleCreator(app_manager.RyuApp):
         super(RuleCreator, self).__init__()
 
     def add_flow(self, datapath):
-        inst = [ofp.OFPInstructionActions(ofproto_v1_3.OFPIT_APPLY_ACTIONS, self.create_actions())]
+        inst = self.create_actions()
         match_list = self.create_match()
         for match in match_list:
-            print(match)
-            mod = ofp.OFPFlowMod(datapath=datapath, match=match, instructions=inst)
+            mod = ofp.OFPFlowMod(datapath=datapath, instructions=inst)
+            mod.match = match
+            print(mod)
             datapath.send_msg(mod)
 
+    def create_actions(self):
+        actions_builder = Actions13Builder()
+        actions = actions_builder.set_output_port(10).set_vlan(10).build()
+        return actions
+
     def create_match(self):
+        '''
+        Create math with multiple TCP ports:
+        :return:
+        '''
         mb = MatchBuilder()
         match_list = []
 
         ports = [1,2,3]
-        match = mb.set_in_port(1).set_eth_type().set_vlan_vid((0x1000 | 101))
+        match = mb.set_eth_type().set_in_port(1).set_ipv4_dst('10.1.0.1').set_ipv4_src("10.2.0.1").set_vlan_vid((0x1000 | 101))
 
         for p in ports:
             match_copy = match
-            match_copy = match_copy.set_tcp_field(src_port=p).build()
+            match_copy = match_copy.set_udp_field(src_port=p).build()
             match_list.append(match_copy)
 
         return match_list
-
-    def create_actions(self):
-        actions = [ofp.OFPActionOutput(port=3)]
-        return  actions
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def get_datapath(self, ev):
@@ -90,8 +96,43 @@ class MatchBuilder():
             self.match_fields['tcp_dst'] = dst_port
         return self
 
+    def set_udp_field(self, src_port=None, dst_port=None):
+        self.match_fields['ip_proto'] = 17
+        if src_port is not None:
+            self.match_fields['udp_src'] = src_port
+        if dst_port is not None:
+            self.match_fields['udp_dst'] = dst_port
+        return self
+		
     def build(self):
         match = ofp.OFPMatch(**self.match_fields)
         return match
 
+class Actions13Builder(object):
+
+    def __init__(self):
+        self.actions_fields = []
+
+    def set_mac_rewrite(self, eth_src):
+        self.actions_fields.append(ofp.OFPActionSetField(eth_src=eth_src))
+        return self
+
+    def set_vlan(self, vlan_id):
+        self.actions_fields.append(ofp.OFPActionPushVlan())
+        self.actions_fields.append(ofp.OFPActionSetField(vlan_vid=(0x1000 | vlan_id)))
+        return self
+
+    def set_extract_vlan(self):
+        self.actions_fields.append(ofp.OFPActionPopVlan())
+        return self
+
+    def push_vlan(self):
+        self.actions_fields.append(ofp.OFPActionPushVlan())
+
+    def set_output_port(self, port):
+        self.actions_fields.append(ofp.OFPActionOutput(port=port))
+        return self
+
+    def build(self):
+        return [ofp.OFPInstructionActions(ofproto_v1_3.OFPIT_APPLY_ACTIONS, self.actions_fields)]
 
