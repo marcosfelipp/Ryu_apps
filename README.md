@@ -1,2 +1,3 @@
 # Ryu_apps
-Creates a simple Ryu app using the tutorials and then adds on to it.
+Examples of how to use Pattern Builder to separate Business Rules from implementation.
+Implementation in Framawork Ryu in versions 1.0 and 1.3
